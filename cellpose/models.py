@@ -513,25 +513,42 @@ class CellposeModel(UnetModel):
 
                     if multiprocess == True:
                         # Multiprocess masks steps
+                        time_1 = time.time()
                         # Get masks
                         with concurrent.futures.ThreadPoolExecutor(4) as executor:
                             maski = executor.submit(dynamics.get_masks, p, iscell=(cellprob>cellprob_threshold),
                                                     flows=dP, threshold=flow_threshold)
                         # Remove small holes
+                        time_2 = time.time()
                         with concurrent.futures.ThreadPoolExecutor(4) as executor:
                             maski_2 = executor.submit(utils.fill_holes_and_remove_small_masks, maski)
                         # Resize
+                        time_3 = time.time()
                         with concurrent.futures.ThreadPoolExecutor(4) as executor:
                             maski_3 = executor.submit(transforms.resize_image, maski_2, shape[-3], shape[-2], 
                                                         interpolation=cv2.INTER_NEAREST)
+                        # Initiate output_list
+                        maski = maski_3.copy()
+                        
+                        # Clean up
+                        del(maski_3)
+                        del(maski_2)
+                        
+                        time_4 = time.time()
+                        print([time_2 - time_1, time_3 - time_2, time_4 - time_3]) 
                     
                     # If not multiprocessed
                     else:
+                        time_1 = time.time()
                         maski = dynamics.get_masks(p, iscell=(cellprob>cellprob_threshold),
                                                         flows=dP, threshold=flow_threshold)
-                        maski_2 = utils.fill_holes_and_remove_small_masks(maski)
-                        maski_3 = transforms.resize_image(maski, shape[-3], shape[-2], 
+                        time_2 = time.time()
+                        maski = utils.fill_holes_and_remove_small_masks(maski)
+                        time_3 = time.time()
+                        maski = transforms.resize_image(maski, shape[-3], shape[-2], 
                                                         interpolation=cv2.INTER_NEAREST)
+                        time_4 = time.time()
+                        print([time_2 - time_1, time_3 - time_2, time_4 - time_3]) 
                     
                     if progress is not None:
                         progress.setValue(75)
