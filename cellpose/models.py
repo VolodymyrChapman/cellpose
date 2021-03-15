@@ -514,14 +514,14 @@ class CellposeModel(UnetModel):
                     if multiprocess == True:
                         # Multiprocess masks steps
                         # Get masks
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                        with concurrent.futures.ThreadPoolExecutor(4) as executor:
                             maski = executor.submit(dynamics.get_masks, p, iscell=(cellprob>cellprob_threshold),
                                                     flows=dP, threshold=flow_threshold)
                         # Remove small holes
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                        with concurrent.futures.ThreadPoolExecutor(4) as executor:
                             maski_2 = executor.submit(utils.fill_holes_and_remove_small_masks, maski)
                         # Resize
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                        with concurrent.futures.ThreadPoolExecutor(4) as executor:
                             maski_3 = executor.submit(transforms.resize_image, maski_2, shape[-3], shape[-2], 
                                                         interpolation=cv2.INTER_NEAREST)
                     
