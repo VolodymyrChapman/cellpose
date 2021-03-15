@@ -121,7 +121,7 @@ class Cellpose():
     def eval(self, x, batch_size=8, channels=None, invert=False, normalize=True, diameter=30., do_3D=False, anisotropy=None,
              net_avg=True, augment=False, tile=True, tile_overlap=0.1, resample=False, interp=True,
              flow_threshold=0.4, cellprob_threshold=0.0, min_size=15, 
-              stitch_threshold=0.0, rescale=None, progress=None):
+              stitch_threshold=0.0, rescale=None, progress=None, multiprocess = True):
         """ run cellpose and get masks
 
         Parameters
@@ -281,7 +281,7 @@ class Cellpose():
                                             cellprob_threshold=cellprob_threshold,
                                             min_size=min_size, 
                                             stitch_threshold=stitch_threshold, 
-                                            multiprocess= True)
+                                            multiprocess= multiprocess)
         print('estimated masks for %d image(s) in %0.2f sec'%(nimg, time.time()-tic))
         print('>>>> TOTAL TIME %0.2f sec'%(time.time()-tic0))
         
