@@ -549,7 +549,7 @@ class CellposeModel(UnetModel):
 
 
             with concurrent.futures.ProcessPoolExecutor(max_workers = 3) as executor:
-                output = executor.map(helper, iterator)
+                executor.map(helper, iterator)
 
     ##############################################################################################################################
 
