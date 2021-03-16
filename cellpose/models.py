@@ -535,6 +535,7 @@ class CellposeModel(UnetModel):
                     niter = 1 / rescale[i] * 200
                     p = dynamics.follow_flows(-1 * dP * (cellprob > cellprob_threshold) / 5., 
                                                 niter=niter, interp=interp, use_gpu=self.gpu) ############## cellprob_threshold, self, interp
+                    
                     if progress is not None:
                         progress.setValue(65)
                     
