@@ -503,6 +503,9 @@ class CellposeModel(UnetModel):
 
                 img = x[i].copy() ########################### x
                 Ly,Lx = img.shape[:2]
+                
+                # Progress point
+                print(1)
 
                 tic = time.time()
                 shape = img.shape
@@ -511,6 +514,9 @@ class CellposeModel(UnetModel):
                 y, style = self._run_nets(img, net_avg=net_avg, 
                                             augment=augment, tile=tile,
                                             tile_overlap=tile_overlap)  ####### net_avg, augment, tile, tile_overlap
+
+                # Progress point
+                print(2)
 
                 net_time += time.time() - tic ##### net_time
                 if progress is not None: ###### progress
@@ -521,6 +527,9 @@ class CellposeModel(UnetModel):
                 cellprob = y[:,:,-1]
                 dP = y[:,:,:2].transpose((2,0,1))
 
+                # Progress point
+                print(3)
+
                 if compute_masks:
                     tic=time.time()
                     niter = 1 / rescale[i] * 200
@@ -528,13 +537,19 @@ class CellposeModel(UnetModel):
                                                 niter=niter, interp=interp, use_gpu=self.gpu) ############## cellprob_threshold, self, interp
                     if progress is not None:
                         progress.setValue(65)
-
+                    
+                    # Progress point
+                    print(4)
+                    
                     else:
                         maski = dynamics.get_masks(p, iscell=(cellprob>cellprob_threshold),
                                                         flows=dP, threshold=flow_threshold) ########### flow_threshold
                         maski = utils.fill_holes_and_remove_small_masks(maski)
                         maski = transforms.resize_image(maski, shape[-3], shape[-2], 
                                                         interpolation=cv2.INTER_NEAREST)
+                    
+                    # Progress point
+                    print(5)
                     
                     if progress is not None:
                         progress.setValue(75)
@@ -546,6 +561,9 @@ class CellposeModel(UnetModel):
                 else:
                     flows.append([dx_to_circ(dP), dP, cellprob, []])
                     masks.append([])
+            
+            # Progress point
+            print(6)
 
 
             with concurrent.futures.ProcessPoolExecutor(max_workers = 3) as executor:
