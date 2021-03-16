@@ -483,23 +483,21 @@ class CellposeModel(UnetModel):
             net_time = 0
             
                 # Multiprocessing implementation - helper function
-            def helper(i, 
-                                            x = x, 
-                                            rescale = rescale, 
-                                            net_avg=net_avg, 
-                                            augment=augment, 
-                                            tile=tile,
-                                            tile_overlap=tile_overlap, 
-                                            net_time = net_time, 
-                                            progress = progress, 
-                                            cellprob_threshold = cellprob_threshold,
-                                            self = self,
-                                            interp = interp,
-                                            flow_threshold = flow_threshold,
-                                            flow_time = flow_time,
-                                            styles = styles,
-                                            masks = masks,
-                                            flows = flows):
+            def helper(i, x = x, rescale = rescale, 
+                    net_avg=net_avg, 
+                    augment=augment, 
+                    tile=tile,
+                    tile_overlap=tile_overlap, 
+                    net_time = net_time, 
+                    progress = progress, 
+                    cellprob_threshold = cellprob_threshold,
+                    self = self,
+                    interp = interp,
+                    flow_threshold = flow_threshold,
+                    flow_time = flow_time,
+                    styles = styles,
+                    masks = masks,
+                    flows = flows):
 
                 img = x[i].copy() ########################### x
                 Ly,Lx = img.shape[:2]
@@ -539,10 +537,9 @@ class CellposeModel(UnetModel):
                     if progress is not None:
                         progress.setValue(65)
                     
-                    # Progress point
-                    print(4)
-                    
                     else:
+                        # Progress point
+                        print(4)
                         maski = dynamics.get_masks(p, iscell=(cellprob>cellprob_threshold),
                                                         flows=dP, threshold=flow_threshold) ########### flow_threshold
                         maski = utils.fill_holes_and_remove_small_masks(maski)
