@@ -481,86 +481,75 @@ class CellposeModel(UnetModel):
         if not do_3D:
             flow_time = 0
             net_time = 0
-            for i in iterator:
-                img = x[i].copy()
+            
+                # Multiprocessing implementation - helper function
+            def helper(i, 
+                                            x = x, 
+                                            rescale = rescale, 
+                                            net_avg=net_avg, 
+                                            augment=augment, 
+                                            tile=tile,
+                                            tile_overlap=tile_overlap, 
+                                            net_time = net_time, 
+                                            progress = progress, 
+                                            cellprob_threshold = cellprob_threshold,
+                                            self = self,
+                                            interp = interp,
+                                            flow_threshold = flow_threshold,
+                                            flow_time = flow_time,
+                                            styles = styles,
+                                            masks = masks,
+                                            flows = flows):
+
+                img = x[i].copy() ########################### x
                 Ly,Lx = img.shape[:2]
 
                 tic = time.time()
                 shape = img.shape
                 # rescale image for flow computation
-                img = transforms.resize_image(img, rsz=rescale[i])
+                img = transforms.resize_image(img, rsz=rescale[i]) ############### rescale
                 y, style = self._run_nets(img, net_avg=net_avg, 
                                             augment=augment, tile=tile,
-                                            tile_overlap=tile_overlap)
-                net_time += time.time() - tic
-                if progress is not None:
+                                            tile_overlap=tile_overlap)  ####### net_avg, augment, tile, tile_overlap
+
+                net_time += time.time() - tic ##### net_time
+                if progress is not None: ###### progress
                     progress.setValue(55)
-                styles.append(style)
+                styles.append(style)   ####### output -> styles ###########
                 if resample:
                     y = transforms.resize_image(y, shape[-3], shape[-2])
                 cellprob = y[:,:,-1]
                 dP = y[:,:,:2].transpose((2,0,1))
+
                 if compute_masks:
                     tic=time.time()
                     niter = 1 / rescale[i] * 200
                     p = dynamics.follow_flows(-1 * dP * (cellprob > cellprob_threshold) / 5., 
-                                                niter=niter, interp=interp, use_gpu=self.gpu)
+                                                niter=niter, interp=interp, use_gpu=self.gpu) ############## cellprob_threshold, self, interp
                     if progress is not None:
                         progress.setValue(65)
-                    
 
-                    # If multiprocessing of mask rebuild required
-
-                    if multiprocess == True:
-                        # Multiprocess masks steps
-                        time_1 = time.time()
-                        # Get masks
-                        with concurrent.futures.ThreadPoolExecutor(4) as executor:
-                            maski = executor.submit(dynamics.get_masks, p, iscell=(cellprob>cellprob_threshold),
-                                                    flows=dP, threshold=flow_threshold)
-                        # Remove small holes
-                        time_2 = time.time()
-                        with concurrent.futures.ThreadPoolExecutor(4) as executor:
-                            maski_2 = executor.submit(utils.fill_holes_and_remove_small_masks, maski)
-                        # Resize
-                        time_3 = time.time()
-                        with concurrent.futures.ThreadPoolExecutor(4) as executor:
-                            maski_3 = executor.submit(transforms.resize_image, maski_2, shape[-3], shape[-2], 
-                                                        interpolation=cv2.INTER_NEAREST)
-                        # Initiate output_list
-                        maski = maski_3.copy()
-                        
-                        # Clean up
-                        del(maski_3)
-                        del(maski_2)
-                        
-                        time_4 = time.time()
-                        print([time_2 - time_1, time_3 - time_2, time_4 - time_3]) 
-                    
-                    # If not multiprocessed
                     else:
-                        time_1 = time.time()
                         maski = dynamics.get_masks(p, iscell=(cellprob>cellprob_threshold),
-                                                        flows=dP, threshold=flow_threshold)
-                        time_2 = time.time()
+                                                        flows=dP, threshold=flow_threshold) ########### flow_threshold
                         maski = utils.fill_holes_and_remove_small_masks(maski)
-                        time_3 = time.time()
                         maski = transforms.resize_image(maski, shape[-3], shape[-2], 
                                                         interpolation=cv2.INTER_NEAREST)
-                        time_4 = time.time()
-                        print([time_2 - time_1, time_3 - time_2, time_4 - time_3]) 
                     
                     if progress is not None:
                         progress.setValue(75)
                     #dP = np.concatenate((dP, np.zeros((1,dP.shape[1],dP.shape[2]), np.uint8)), axis=0)
-                    flows.append([dx_to_circ(dP), dP, cellprob, p])
-                    masks.append(maski_3)
-                    flow_time += time.time() - tic
+                    flows.append([dx_to_circ(dP), dP, cellprob, p]) ####### output -> flows ###########
+                    masks.append(maski) ####### output -> masks ###########
+                    flow_time += time.time() - tic  ###### flow_time
+
                 else:
                     flows.append([dx_to_circ(dP), dP, cellprob, []])
                     masks.append([])
-            if compute_masks:
-                print('time spent: running network %0.2fs; flow+mask computation %0.2f'%(net_time, flow_time))
+
+
+            with concurrent.futures.ProcessPoolExecutor(max_workers = 3) as executor:
+                output = executor.submit(helper, iterator)
 
     ##############################################################################################################################
 
