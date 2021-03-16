@@ -121,7 +121,7 @@ class Cellpose():
     def eval(self, x, batch_size=8, channels=None, invert=False, normalize=True, diameter=30., do_3D=False, anisotropy=None,
              net_avg=True, augment=False, tile=True, tile_overlap=0.1, resample=False, interp=True,
              flow_threshold=0.4, cellprob_threshold=0.0, min_size=15, 
-              stitch_threshold=0.0, rescale=None, progress=None, multiprocess = True):
+              stitch_threshold=0.0, rescale=None, progress=None):
         """ run cellpose and get masks
 
         Parameters
@@ -280,8 +280,8 @@ class Cellpose():
                                             flow_threshold=flow_threshold, 
                                             cellprob_threshold=cellprob_threshold,
                                             min_size=min_size, 
-                                            stitch_threshold=stitch_threshold, 
-                                            multiprocess= multiprocess)
+                                            stitch_threshold=stitch_threshold)
+
         print('estimated masks for %d image(s) in %0.2f sec'%(nimg, time.time()-tic))
         print('>>>> TOTAL TIME %0.2f sec'%(time.time()-tic0))
         
@@ -357,7 +357,7 @@ class CellposeModel(UnetModel):
                 rescale=None, diameter=None, do_3D=False, anisotropy=None, net_avg=True, 
                 augment=False, tile=True, tile_overlap=0.1,
                 resample=False, interp=True, flow_threshold=0.4, cellprob_threshold=0.0, compute_masks=True, 
-                min_size=15, stitch_threshold=0.0, progress=None, multiprocess = True):
+                min_size=15, stitch_threshold=0.0, progress=None):
         """Multiprocess implementation of eval.
             Segment list of images imgs, or 4D array - Z x nchan x Y x X
 
@@ -549,7 +549,7 @@ class CellposeModel(UnetModel):
 
 
             with concurrent.futures.ProcessPoolExecutor(max_workers = 3) as executor:
-                output = executor.submit(helper, iterator)
+                output = executor.map(helper, iterator)
 
     ##############################################################################################################################
 
