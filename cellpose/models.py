@@ -7,11 +7,15 @@ import tempfile
 from scipy.ndimage import median_filter
 import cv2
 
-from . import transforms, dynamics, utils, plot, metrics, core
-from .core import UnetModel, assign_device, check_mkl, use_gpu, convert_images, MXNET_ENABLED, parse_model_string
+# Need to remove this below too
+from cellpose import io
 
-from pathos.multiprocessing import ProcessingPool as Pool
-#import concurrent.futures
+# Need to change these back to . and .core, respectively
+from cellpose import transforms, dynamics, utils, plot, metrics, core
+from cellpose.core import UnetModel, assign_device, check_mkl, use_gpu, convert_images, MXNET_ENABLED, parse_model_string
+
+# from pathos.multiprocessing import ProcessingPool as Pool
+import concurrent.futures
 
 urls = ['https://www.cellpose.org/models/cyto_0',
         'https://www.cellpose.org/models/cyto_1',
@@ -122,7 +126,7 @@ class Cellpose():
     def eval(self, x, batch_size=8, channels=None, invert=False, normalize=True, diameter=30., do_3D=False, anisotropy=None,
              net_avg=True, augment=False, tile=True, tile_overlap=0.1, resample=False, interp=True,
              flow_threshold=0.4, cellprob_threshold=0.0, min_size=15, 
-              stitch_threshold=0.0, rescale=None, progress=None):
+              stitch_threshold=0.0, rescale=None, progress=None, multiprocessing = False):
         """ run cellpose and get masks
 
         Parameters
@@ -281,7 +285,7 @@ class Cellpose():
                                             flow_threshold=flow_threshold, 
                                             cellprob_threshold=cellprob_threshold,
                                             min_size=min_size, 
-                                            stitch_threshold=stitch_threshold)
+                                            stitch_threshold=stitch_threshold, multiprocessing=multiprocessing)
 
         print('estimated masks for %d image(s) in %0.2f sec'%(nimg, time.time()-tic))
         print('>>>> TOTAL TIME %0.2f sec'%(time.time()-tic0))
@@ -358,7 +362,7 @@ class CellposeModel(UnetModel):
                 rescale=None, diameter=None, do_3D=False, anisotropy=None, net_avg=True, 
                 augment=False, tile=True, tile_overlap=0.1,
                 resample=False, interp=True, flow_threshold=0.4, cellprob_threshold=0.0, compute_masks=True, 
-                min_size=15, stitch_threshold=0.0, progress=None):
+                min_size=15, stitch_threshold=0.0, progress=None, multiprocessing = False):
         """Multiprocess implementation of eval.
             Segment list of images imgs, or 4D array - Z x nchan x Y x X
 
@@ -478,102 +482,128 @@ class CellposeModel(UnetModel):
             if not self.torch:
                 self.net.collect_params().grad_req = 'null'
   
-    ################################################################# CPU multiprocess implementation ###########################
+        ################################################################# CPU multiprocess implementation ###########################
         if not do_3D:
             flow_time = 0
             net_time = 0
             
-            # Multiprocessing implementation - helper function
-            def helper(i, x = x, rescale = rescale, 
-                    net_avg=net_avg, 
-                    augment=augment, 
-                    tile=tile,
-                    tile_overlap=tile_overlap, 
-                    net_time = net_time, 
-                    progress = progress, 
-                    cellprob_threshold = cellprob_threshold,
-                    self = self,
-                    interp = interp,
-                    flow_threshold = flow_threshold,
-                    flow_time = flow_time,
-                    styles = styles,
-                    masks = masks,
-                    flows = flows):
+            if multiprocessing == True:
 
-                img = x[i].copy() ########################### x
-                Ly,Lx = img.shape[:2]
-                
-                # Progress point
-                print(1)
+                # variable list for passing into helper function
+                variable_list = [x, rescale, net_avg, augment, tile, tile_overlap, net_time, progress, cellprob_threshold, self, interp, flow_threshold, flow_time, styles, masks, flows]
 
-                tic = time.time()
-                shape = img.shape
-                # rescale image for flow computation
-                img = transforms.resize_image(img, rsz=rescale[i]) ############### rescale
-                y, style = self._run_nets(img, net_avg=net_avg, 
-                                            augment=augment, tile=tile,
-                                            tile_overlap=tile_overlap)  ####### net_avg, augment, tile, tile_overlap
+                # Multiprocessing implementation - helper function
 
-                # Progress point
-                print(2)
+                def helper(i, variable_list):
+                    x, rescale, net_avg, augment, tile, tile_overlap, net_time, progress, cellprob_threshold, self, interp, flow_threshold, flow_time, styles, masks, flows = variable_list
 
-                net_time += time.time() - tic ##### net_time
-                if progress is not None: ###### progress
-                    progress.setValue(55)
-                styles.append(style)   ####### output -> styles ###########
-                if resample:
-                    y = transforms.resize_image(y, shape[-3], shape[-2])
-                cellprob = y[:,:,-1]
-                dP = y[:,:,:2].transpose((2,0,1))
+                    img = x[i].copy() ########################### x
+                    Ly,Lx = img.shape[:2]
 
-                # Progress point
-                print(3)
+                    tic = time.time()
+                    shape = img.shape
+                    # rescale image for flow computation
+                    img = transforms.resize_image(img, rsz=rescale[i]) ############### rescale
+                    y, style = self._run_nets(img, net_avg=net_avg, 
+                                                augment=augment, tile=tile,
+                                                tile_overlap=tile_overlap)  ####### net_avg, augment, tile, tile_overlap
 
-                if compute_masks:
-                    tic=time.time()
-                    niter = 1 / rescale[i] * 200
-                    p = dynamics.follow_flows(-1 * dP * (cellprob > cellprob_threshold) / 5., 
-                                                niter=niter, interp=interp, use_gpu=self.gpu) ############## cellprob_threshold, self, interp
-                    
-                    if progress is not None:
-                        progress.setValue(65)
-                    
+                    net_time += time.time() - tic ##### net_time
+                    if progress is not None: ###### progress
+                        progress.setValue(55)
+                    styles.append(style)   ####### output -> styles ###########
+                    if resample:
+                        y = transforms.resize_image(y, shape[-3], shape[-2])
+                    cellprob = y[:,:,-1]
+                    dP = y[:,:,:2].transpose((2,0,1))
+
+                    if compute_masks:
+                        tic=time.time()
+                        niter = 1 / rescale[i] * 200
+                        p = dynamics.follow_flows(-1 * dP * (cellprob > cellprob_threshold) / 5., 
+                                                    niter=niter, interp=interp, use_gpu=self.gpu) ############## cellprob_threshold, self, interp
+                        
+                        if progress is not None:
+                            progress.setValue(65)
+                        
+                        else:
+                            maski = dynamics.get_masks(p, iscell=(cellprob>cellprob_threshold),
+                                                            flows=dP, threshold=flow_threshold) ########### flow_threshold
+                            maski = utils.fill_holes_and_remove_small_masks(maski)
+                            maski = transforms.resize_image(maski, shape[-3], shape[-2], 
+                                                            interpolation=cv2.INTER_NEAREST)
+                        
+                        if progress is not None:
+                            progress.setValue(75)
+                        #dP = np.concatenate((dP, np.zeros((1,dP.shape[1],dP.shape[2]), np.uint8)), axis=0)
+                        flows.append([dx_to_circ(dP), dP, cellprob, p]) ####### output -> flows ###########
+                        masks.append(maski) ####### output -> masks ###########
+                        flow_time += time.time() - tic  ###### flow_time
+
                     else:
-                        # Progress point
-                        print(4)
-                        maski = dynamics.get_masks(p, iscell=(cellprob>cellprob_threshold),
-                                                        flows=dP, threshold=flow_threshold) ########### flow_threshold
-                        maski = utils.fill_holes_and_remove_small_masks(maski)
-                        maski = transforms.resize_image(maski, shape[-3], shape[-2], 
-                                                        interpolation=cv2.INTER_NEAREST)
-                    
-                    # Progress point
-                    print(5)
-                    
-                    if progress is not None:
-                        progress.setValue(75)
-                    #dP = np.concatenate((dP, np.zeros((1,dP.shape[1],dP.shape[2]), np.uint8)), axis=0)
-                    flows.append([dx_to_circ(dP), dP, cellprob, p]) ####### output -> flows ###########
-                    masks.append(maski) ####### output -> masks ###########
-                    flow_time += time.time() - tic  ###### flow_time
+                        flows.append([dx_to_circ(dP), dP, cellprob, []])
+                        masks.append([])
 
-                else:
-                    flows.append([dx_to_circ(dP), dP, cellprob, []])
-                    masks.append([])
+                # p = Pool(3)
+                # p.map(helper, iterator)
+                with concurrent.futures.ProcessPoolExecutor(max_workers = 3) as executor:
+                    executor.map(helper, iterator)
             
-            # Progress point
-            print(6)
+            # Non multiprocessed implementation
+            else:
+                for i in iterator: 
+                    img = x[i].copy() ########################### x
+                    Ly,Lx = img.shape[:2]
 
-            p = Pool(3)
-            p.map(helper, iterator)
-            # with concurrent.futures.ProcessPoolExecutor(max_workers = 3) as executor:
-            #     executor.map(helper, iterator)
+                    tic = time.time()
+                    shape = img.shape
+                    # rescale image for flow computation
+                    img = transforms.resize_image(img, rsz=rescale[i]) ############### rescale
+                    y, style = self._run_nets(img, net_avg=net_avg, 
+                                                augment=augment, tile=tile,
+                                                tile_overlap=tile_overlap)  ####### net_avg, augment, tile, tile_overlap
 
-    ##############################################################################################################################
+                    net_time += time.time() - tic ##### net_time
+                    if progress is not None: ###### progress
+                        progress.setValue(55)
+                    styles.append(style)   ####### output -> styles ###########
+                    if resample:
+                        y = transforms.resize_image(y, shape[-3], shape[-2])
+                    cellprob = y[:,:,-1]
+                    dP = y[:,:,:2].transpose((2,0,1))
+
+                    if compute_masks:
+                        tic=time.time()
+                        niter = 1 / rescale[i] * 200
+                        p = dynamics.follow_flows(-1 * dP * (cellprob > cellprob_threshold) / 5., 
+                                                    niter=niter, interp=interp, use_gpu=self.gpu) ############## cellprob_threshold, self, interp
+                        
+                        if progress is not None:
+                            progress.setValue(65)
+                        
+                        else:
+                            maski = dynamics.get_masks(p, iscell=(cellprob>cellprob_threshold),
+                                                            flows=dP, threshold=flow_threshold) ########### flow_threshold
+                            maski = utils.fill_holes_and_remove_small_masks(maski)
+                            maski = transforms.resize_image(maski, shape[-3], shape[-2], 
+                                                            interpolation=cv2.INTER_NEAREST)
+                        
+                        if progress is not None:
+                            progress.setValue(75)
+                        #dP = np.concatenate((dP, np.zeros((1,dP.shape[1],dP.shape[2]), np.uint8)), axis=0)
+                        flows.append([dx_to_circ(dP), dP, cellprob, p]) ####### output -> flows ###########
+                        masks.append(maski) ####### output -> masks ###########
+                        flow_time += time.time() - tic  ###### flow_time
+
+                    else:
+                        flows.append([dx_to_circ(dP), dP, cellprob, []])
+                        masks.append([])
+        ################################ 3D part not modified in any way ####################################################
 
             if stitch_threshold > 0.0 and nimg > 1 and all([m.shape==masks[0].shape for m in masks]):
                 print('stitching %d masks using stitch_threshold=%0.3f to make 3D masks'%(nimg, stitch_threshold))
                 masks = utils.stitch3D(np.array(masks), stitch_threshold=stitch_threshold)
+
         else:
             for i in iterator:
                 tic=time.time()
@@ -926,3 +956,28 @@ class SizeModel():
         self.params = {'A': A, 'smean': smean, 'diam_mean': self.diam_mean, 'ymean': ymean}
         np.save(self.pretrained_size, self.params)
         return self.params
+
+
+# Testing 
+
+#Test with larger images
+base_dir = '/home/volodymyr/Documents/'
+img = io.imread(base_dir + 'tmpba6thhxh.PNG' )
+outfile = base_dir + 'tmpba6thhxh.PNG_test'
+
+# DEFINE CELLPOSE MODEL
+model = Cellpose(gpu=True, model_type='cyto')
+
+# Set channels (grayscale) and diameter (~30 pixels per cell)
+channels = [0, 0]
+diameter = 30
+
+# Evaluate model on image - no multiprocessing
+start_time = time.time()
+masks, flows, styles, diams = model.eval(x = img, diameter = diameter, channels=channels, multiprocessing = False)
+print(f'Time taken for no multiprocessing: {time.time() - start_time}s')
+
+# Evaluate model on image - multiprocessing
+start_time = time.time()
+masks, flows, styles, diams = model.eval( x = img, diameter = diameter, channels=channels, multiprocessing = True)
+print(f'Time taken for multiprocessing: {time.time() - start_time}s')
